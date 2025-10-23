@@ -11,8 +11,23 @@ const app = express();
 // Middleware
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? [process.env.FRONTEND_URL, 'https://*.vercel.app']
-    : ['http://localhost:3000'],
+    ? function(origin, callback) {
+        // Allow requests with no origin (mobile apps, Postman, etc)
+        if (!origin) return callback(null, true);
+        
+        // Allow all Vercel deployments
+        if (origin.includes('.vercel.app')) {
+          return callback(null, true);
+        }
+        
+        // Allow configured frontend URL
+        if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) {
+          return callback(null, true);
+        }
+        
+        callback(new Error('Not allowed by CORS'));
+      }
+    : 'http://localhost:3000',
   credentials: true
 }));
 app.use(express.json());
@@ -26,18 +41,36 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/commerce-
 .then(() => console.log('MongoDB Connected Successfully'))
 .catch((err) => console.error('MongoDB Connection Error:', err));
 
-// Routes
+// Root route
+app.get('/', (req, res) => {
+  res.json({ 
+    success: true,
+    message: 'Commerce App API Server',
+    version: '1.0.0',
+    endpoints: {
+      auth: '/api/auth',
+      products: '/api/products',
+      orders: '/api/orders',
+      users: '/api/users',
+      categories: '/api/categories',
+      payment: '/api/payment',
+      health: '/api/health'
+    }
+  });
+});
+
+// Health check route
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK', message: 'Server is running' });
+});
+
+// API Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/products', require('./routes/products'));
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/categories', require('./routes/categories'));
 app.use('/api/payment', require('./routes/payment'));
-
-// Health check route
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Server is running' });
-});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -50,7 +83,13 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// For local development
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+// Export for Vercel serverless
+module.exports = app;
 
